@@ -647,10 +647,10 @@ function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2
 function calcPhotoSize(totalActive) {
   let baseMin, baseMax;
   if (totalActive <= 1) { baseMin = 0.31; baseMax = 0.36; }
-  else if (totalActive === 2) { baseMin = 0.19; baseMax = 0.28; }
-  else if (totalActive === 3) { baseMin = 0.16; baseMax = 0.23; }
-  else if (totalActive === 4) { baseMin = 0.12; baseMax = 0.19; }
-  else { baseMin = 0.12; baseMax = 0.18; }
+  else if (totalActive === 2) { baseMin = 0.18; baseMax = 0.25; }
+  else if (totalActive === 3) { baseMin = 0.15; baseMax = 0.20; }
+  else if (totalActive === 4) { baseMin = 0.11; baseMax = 0.16; }
+  else { baseMin = 0.10; baseMax = 0.14; }
 
   let existingSizes = [];
   for (let d of displays) {
