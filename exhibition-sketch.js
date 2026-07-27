@@ -129,8 +129,6 @@ function getScatterGridSize(w, h) {
   return C.scatterGridSmall;
 }
 
-// ===================== p5.js =====================
-
 function setup() {
   let cv = createCanvas(windowWidth, windowHeight);
   cv.parent('exhibitionCanvas');
@@ -197,7 +195,6 @@ function draw() {
     }
   }
 
-  // ★ 固定时间批次管理：到点强制所有照片散射消失
   if (batchInProgress && !batchEndTriggered) {
     let batchDurationMs = getBatchDuration(currentBatchSize);
     if (millis() - batchStartTime >= batchDurationMs) {
@@ -389,7 +386,6 @@ function pickWeightedFromPool() {
   return waitPool.length - 1;
 }
 
-// ★ 每帧检查：寻找标记了新上传的照片，条件满足就启动
 function startPendingUploads() {
   let bestIdx = -1;
   let bestTime = 0;
@@ -401,8 +397,6 @@ function startPendingUploads() {
   }
   if (bestIdx < 0) return;
   if (displays.length >= C.maxDisplay) return;
-
-  // 如果在批次中，检查剩余时间是否 >= 5秒
   if (batchInProgress) {
     let batchDurationMs = getBatchDuration(currentBatchSize);
     let elapsed = millis() - batchStartTime;
@@ -652,11 +646,11 @@ function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2
 
 function calcPhotoSize(totalActive) {
   let baseMin, baseMax;
-  if (totalActive <= 1) { baseMin = 0.22; baseMax = 0.30; }
-  else if (totalActive === 2) { baseMin = 0.16; baseMax = 0.24; }
-  else if (totalActive === 3) { baseMin = 0.13; baseMax = 0.20; }
-  else if (totalActive === 4) { baseMin = 0.11; baseMax = 0.17; }
-  else { baseMin = 0.09; baseMax = 0.15; }
+  if (totalActive <= 1) { baseMin = 0.28; baseMax = 0.35; }
+  else if (totalActive === 2) { baseMin = 0.18; baseMax = 0.26; }
+  else if (totalActive === 3) { baseMin = 0.13; baseMax = 0.21; }
+  else if (totalActive === 4) { baseMin = 0.13; baseMax = 0.18; }
+  else { baseMin = 0.11; baseMax = 0.16; }
 
   let existingSizes = [];
   for (let d of displays) {
@@ -738,9 +732,17 @@ class DisplayPhoto {
 
     this.particleTarget = this.getTargetParticleCount();
 
-    let wRatio = calcPhotoSize(totalActive);
-    this.w = width * wRatio;
-    this.h = this.w * this.aspect;
+    let sizeRatio = calcPhotoSize(totalActive);
+    let canvasLongSide = max(width, height);
+
+    if (this.aspect >= 1) {
+      this.h = canvasLongSide * sizeRatio;
+      this.w = this.h / this.aspect;
+    } else {
+      this.w = canvasLongSide * sizeRatio;
+      this.h = this.w * this.aspect;
+    }
+
 
     this.findNonOverlapPos();
 
@@ -986,13 +988,11 @@ class DisplayPhoto {
 
           let flowF = followFlow(p.pos);
           p.acc.add(flowF.mult(0.3));
-
           p.vel.add(p.acc);
           if (p.vel.mag() < 0.3) p.vel.add(tinyVel());
           p.vel.limit(C.baseSpeed * 0.8);
           p.pos.add(p.vel);
           p.acc.mult(0);
-
           if (d < 100) p.targetA = min(0.6, p.targetA + 0.005);
         }
 
@@ -1217,7 +1217,7 @@ function checkPoolDisplay() {
 function handleNewPhoto(data, isNew) {
   if (isNew) {
     cleanupStorage();
-    data.newUpload = millis();  // ★ 标记为新上传
+    data.newUpload = millis();  
     waitPool.push(data);
   } else {
     waitPool.push(data);
@@ -1243,7 +1243,6 @@ function cleanupStorage() {
     for (let r of toRemove) {
       let i = waitPool.indexOf(r);
       if (i !== -1) waitPool.splice(i, 1);
-      // 从 Supabase 删除
       fetch(`${SUPABASE_URL}/rest/v1/photos?id=eq.${r.id}`, {
         method: 'DELETE',
         headers: {
@@ -1273,9 +1272,6 @@ class Ripple {
   }
 }
 
-// ============================================================
-// ★ 从 Supabase 加载所有照片（替代 IndexedDB）
-// ============================================================
 
 async function loadAll() {
   try {
@@ -1320,7 +1316,6 @@ async function checkNewPhoto() {
   } catch (e) { console.error(e); }
 }
 
-// ★ 更新 Supabase 数据（标星用）
 async function updDB(data) {
   try {
     await fetch(`${SUPABASE_URL}/rest/v1/photos?id=eq.${data.id}`, {
@@ -1337,7 +1332,6 @@ async function updDB(data) {
   } catch (e) { console.error(e); }
 }
 
-// ★ 从 Supabase 删除
 async function delDB(id) {
   try {
     await fetch(`${SUPABASE_URL}/rest/v1/photos?id=eq.${id}`, {
@@ -1356,7 +1350,6 @@ function cleanup() {
   }
 }
 
-// ===================== 后台面板 =====================
 
 function keyPressed() { if (key === 'Q' || key === 'q') toggleBS(); }
 function toggleBS() { bsVisible = !bsVisible; if (bsPanel) bsVisible ? (bsPanel.style('display', 'flex'), updList()) : bsPanel.style('display', 'none'); }
