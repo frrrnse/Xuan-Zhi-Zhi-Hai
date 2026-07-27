@@ -1632,8 +1632,8 @@ function generateExhibitionThumbnail() {
       dataURL = pg.elt.toDataURL('image/jpeg', quality);
       const base64Data = dataURL.split(',')[1];
       estimatedSize = base64Data.length * 0.75; // base64 → 字节
-      quality -= 0.1;
-    } while (estimatedSize > 200 * 1024 && quality > 0.1);
+      quality -= 0.05;
+    } while (estimatedSize > 300 * 1024 && quality > 0.1);
 
     pg.remove();
     resolve(dataURL);
