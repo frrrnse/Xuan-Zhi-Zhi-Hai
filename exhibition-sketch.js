@@ -23,7 +23,7 @@ const C = {
   trailBg: 20,
   gatherMs: 4000,
   convergeMs: 5000,
-  displayMs: 14000,
+  displayMs: 16000,
   scatterMs: 5000,
   uploadMs: 5000,
   checkMinMs: 800,
@@ -99,7 +99,7 @@ function tinyVel() {
 }
 
 function getBatchDuration(count) {
-  const durations = {1: 28, 2: 30, 3: 35, 4: 40, 5: 45};
+  const durations = {1: 29, 2: 31, 3: 37, 4: 43, 5: 48};
   return (durations[count] || 30) * 1000;
 }
 
@@ -137,8 +137,8 @@ function setup() {
   colorMode(RGB);
   noiseDetail(4, 0.5);
 
-  cols = floor(width / 6);
-  rows = floor(height / 6);
+  cols = floor(width / 9);
+  rows = floor(height / 9);
   flowField = new Array(cols * rows);
   detailFlowField = new Array(cols * rows);
 
@@ -160,7 +160,7 @@ function draw() {
 
 
   flowZ = millis() * C.flowSpeed;
-  updateFlowField();
+  if (frameCount % 2 === 0) updateFlowField();
 
   background(0, 0, 0, C.trailBg);
 
@@ -188,9 +188,12 @@ function draw() {
     }
   }
 
+if (!isAnyPhotoScattering()) {
   for (let iter = 0; iter < C.collisionIterations; iter++) {
     resolveCollisions();
   }
+}
+
 
   drawParticles();
 
@@ -602,14 +605,14 @@ function updateFlowField() {
 }
 
 function followFlow(pos) {
-  let x = floor(constrain(pos.x / 6, 0, cols - 1));
-  let y = floor(constrain(pos.y / 6, 0, rows - 1));
+  let x = floor(constrain(pos.x / 9, 0, cols - 1));
+  let y = floor(constrain(pos.y / 9, 0, rows - 1));
   return flowField[x + y * cols].copy();
 }
 
 function followDetailFlow(pos) {
-  let x = floor(constrain(pos.x / 6, 0, cols - 1));
-  let y = floor(constrain(pos.y / 6, 0, rows - 1));
+  let x = floor(constrain(pos.x / 9, 0, cols - 1));
+  let y = floor(constrain(pos.y / 9, 0, rows - 1));
   return detailFlowField[x + y * cols].copy();
 }
 
