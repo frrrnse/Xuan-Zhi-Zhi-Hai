@@ -632,8 +632,6 @@ function drawParticles() {
       a = p.alpha * (0.5 + 0.5 * mix);
     }
 
-    fill(r, g, b, a * 0.08);
-    ellipse(p.pos.x, p.pos.y, p.size * 3);
     fill(r, g, b, a);
     ellipse(p.pos.x, p.pos.y, p.size, p.size);
     fill(255, 255, 255, a * 0.2);
