@@ -666,7 +666,7 @@ function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2
 function calcPhotoSize(totalActive) {
   let baseMin, baseMax;
   if (totalActive <= 1) { baseMin = 0.35; baseMax = 0.42; }
-  else if (totalActive === 2) { baseMin = 0.28; baseMax = 0.33; }
+  else if (totalActive === 2) { baseMin = 0.24; baseMax = 0.33; }
   else if (totalActive === 3) { baseMin = 0.18; baseMax = 0.25; }
   else if (totalActive === 4) { baseMin = 0.17; baseMax = 0.22; }
   else { baseMin = 0.16; baseMax = 0.18; }
