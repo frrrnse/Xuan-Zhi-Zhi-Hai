@@ -1,8 +1,10 @@
 const SUPABASE_URL = 'https://hpacebvclxznmpohxbtf.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_b71hGnmuYtG9urxNGTsyFQ_XguBL8Ui';
 
+// ★ [CHANGED] 新增 PRE_GATHERING 阶段
 const PHASE = {
   WAITING: 'waiting',
+  PRE_GATHERING: 'pre_gathering',
   UPLOADING: 'uploading',
   GATHERING: 'gathering',
   CONVERGING: 'converging',
@@ -21,6 +23,8 @@ const C = {
   detailStrength: 0.6,
   baseSpeed: 2.0,
   trailBg: 20,
+  // ★ [CHANGED] 新增：粒子从边缘生成的5秒
+  preGatherMs: 5000,
   gatherMs: 4000,
   convergeMs: 5000,
   displayMs: 14000,
@@ -158,19 +162,12 @@ function draw() {
   sin2 = sin(t * 0.00004);
   sin3 = sin(t * 0.00006);
 
-
   flowZ = millis() * C.flowSpeed;
   updateFlowField();
 
   background(0, 0, 0, C.trailBg);
 
   updateFreeParticles();
-
-  for (let d of displays) {
-    if (d.phase === PHASE.GATHERING && frameCount % C.claimCheckInterval === 0) {
-      d.claimNearbyParticles();
-    }
-  }
 
   if (frameCount % C.congestionCheckInterval === 0) {
     eliminateCongestion();
@@ -265,10 +262,11 @@ function windowResized() {
   detailFlowField = new Array(cols * rows);
 }
 
+// ★ [CHANGED] 初始化：前4000自由粒子，后11000照片储备粒子
 function initParticles() {
   pts = [];
   for (let i = 0; i < C.totalParticles; i++) {
-    let isActive = i < C.targetFreeCount;
+    let isFree = i < C.targetFreeCount;
     pts.push({
       pos: createVector(random(width), random(height)),
       vel: createVector(random(-0.5, 0.5), random(-0.5, 0.5)),
@@ -281,7 +279,15 @@ function initParticles() {
       targetR: 255, targetG: 255, targetB: 255,
       targetA: 0,
       hasTarget: false,
-      hidden: !isActive,
+      hidden: !isFree,
+      // ★ 新增属性
+      isPhotoParticle: !isFree,
+      photoOwnerId: null,
+      startX: 0, startY: 0,
+      ctrlX: 0, ctrlY: 0,
+      endX: 0, endY: 0,
+      curveT: 0,
+      curveSpeed: 0,
     });
   }
 }
@@ -324,6 +330,7 @@ function shuffle(arr) {
   }
 }
 
+// ★ [CHANGED] 只维护自由粒子（前4000），不碰照片储备粒子
 function maintainFreeCount() {
   if (isAnyPhotoScattering()) return;
   let freeCount = 0;
@@ -337,7 +344,8 @@ function maintainFreeCount() {
     let deficit = C.targetFreeCount - freeCount;
     let candidates = [];
     for (let i = 0; i < pts.length; i++) {
-      if (pts[i].hidden && !pts[i].claimedBy) {
+      // ★ 只从自由粒子（非 isPhotoParticle）中选
+      if (pts[i].hidden && !pts[i].claimedBy && !pts[i].isPhotoParticle) {
         candidates.push(i);
       }
     }
@@ -356,21 +364,26 @@ function maintainFreeCount() {
   }
 }
 
+// ★ [CHANGED] 一张一张生成，调 startPreGathering
 function ensurePhotoContinuity() {
   if (!batchInProgress) return;
   if (photosStartedThisBatch >= currentBatchSize) return;
   if (waitPool.length === 0) return;
   if (displays.length >= C.maxDisplay) return;
 
+  // ★ 一次只生成一张（避免卡）
+  for (let d of displays) {
+    if (d.phase === PHASE.PRE_GATHERING || d.phase === PHASE.GATHERING) return;
+  }
+
   let idx = pickWeightedFromPool();
   if (idx < 0) return;
   let data = waitPool[idx];
   let d = new DisplayPhoto(data, 'random');
   displays.push(d);
-  let started = d.startGathering();
+  let started = d.startPreGathering();
   if (started) {
     waitPool.splice(idx, 1);
-    maintainFreeCount();
     ripples.push(new Ripple(d.x, d.y, 1.0));
     photosStartedThisBatch++;
   } else {
@@ -393,6 +406,7 @@ function pickWeightedFromPool() {
   return waitPool.length - 1;
 }
 
+// ★ [CHANGED] 统一用 startPreGathering，且一次一张
 function startPendingUploads() {
   let bestIdx = -1;
   let bestTime = 0;
@@ -404,6 +418,12 @@ function startPendingUploads() {
   }
   if (bestIdx < 0) return;
   if (displays.length >= C.maxDisplay) return;
+  
+  // ★ 一次一张
+  for (let d of displays) {
+    if (d.phase === PHASE.PRE_GATHERING || d.phase === PHASE.GATHERING) return;
+  }
+  
   if (batchInProgress) {
     let batchDurationMs = getBatchDuration(currentBatchSize);
     let elapsed = millis() - batchStartTime;
@@ -414,11 +434,10 @@ function startPendingUploads() {
   let data = waitPool[bestIdx];
   let d = new DisplayPhoto(data, 'random');
   displays.push(d);
-  let started = d.startGathering();
+  let started = d.startPreGathering();
   if (started) {
     waitPool.splice(bestIdx, 1);
     delete data.newUpload;
-    maintainFreeCount();
     ripples.push(new Ripple(d.x, d.y, 1.0));
   } else {
     displays.pop();
@@ -481,6 +500,8 @@ function resolveCollisions() {
   }
 }
 
+// ★ [CHANGED] 自由粒子（0-3999）照常流动+吸引/避让；
+//   照片储备粒子被 claimed 时由 DisplayPhoto.update 控制位置，无需在此处理
 function updateFreeParticles() {
   const VB = C.vanishBuffer;
   const JITTER = C.jitterStrength;
@@ -496,55 +517,39 @@ function updateFreeParticles() {
     p.acc.x += random(-JITTER, JITTER);
     p.acc.y += random(-JITTER, JITTER);
 
-    for (let d of displays) {
-      if (d.phase === PHASE.WAITING) continue;
-      if (d.phase === PHASE.SCATTERING && d.scatterProgress > 0.8) continue;
+    // ★ 只有自由粒子（非照片专用）才受照片吸引/避让影响
+    if (!p.isPhotoParticle) {
+      for (let d of displays) {
+        if (d.phase === PHASE.WAITING) continue;
+        if (d.phase === PHASE.SCATTERING && d.scatterProgress > 0.8) continue;
 
-      let dx = d.x - p.pos.x;
-      let dy = d.y - p.pos.y;
-      let dist = sqrt(dx * dx + dy * dy);
-      let halfW = d.w / 2;
-      let halfH = d.h / 2;
+        let dx = d.x - p.pos.x;
+        let dy = d.y - p.pos.y;
+        let dist = sqrt(dx * dx + dy * dy);
+        let halfW = d.w / 2;
+        let halfH = d.h / 2;
 
-      if (d.phase === PHASE.GATHERING) {
-        let inExclusionZone = abs(p.pos.x - d.x) < halfW + C.selectionMargin &&
-                              abs(p.pos.y - d.y) < halfH + C.selectionMargin;
-        if (!inExclusionZone && dist < C.attractRadius && dist > 10) {
-          let strength = C.attractForce * (1 - dist / C.attractRadius);
-          let velMag = p.vel.mag();
-          if (velMag > 0.3) {
-            let velDir = p.vel.copy().normalize();
-            let toPhoto = createVector(dx, dy).normalize();
-            let dot = velDir.dot(toPhoto);
-            if (dot > -0.3) {
-              let ang = atan2(dy, dx);
-              p.acc.x += cos(ang) * strength;
-              p.acc.y += sin(ang) * strength;
-            }
-          } else {
-            let ang = atan2(dy, dx);
-            p.acc.x += cos(ang) * strength * 0.5;
-            p.acc.y += sin(ang) * strength * 0.5;
-          }
+        // ★ 旧版 GATHERING 的吸引——但照片现在用储备粒子，
+        //   自由粒子不再被吸引，所以这里实际不会触发
+        //   但保留代码兼容，只是不会走到里面
+
+        let halfDiag = sqrt(d.w * d.w + d.h * d.h) / 2;
+        let avoidForce, avoidRadius;
+        if (d.phase === PHASE.GATHERING) {
+          avoidForce = C.gatheringAvoidForce;
+          avoidRadius = C.gatheringAvoidRadius;
+        } else {
+          avoidForce = C.generalAvoidForce;
+          avoidRadius = C.generalAvoidRadius;
         }
-      }
 
-      let halfDiag = sqrt(d.w * d.w + d.h * d.h) / 2;
-      let avoidForce, avoidRadius;
-      if (d.phase === PHASE.GATHERING) {
-        avoidForce = C.gatheringAvoidForce;
-        avoidRadius = C.gatheringAvoidRadius;
-      } else {
-        avoidForce = C.generalAvoidForce;
-        avoidRadius = C.generalAvoidRadius;
-      }
-
-      let avoidDist = halfDiag + avoidRadius;
-      if (dist < avoidDist && dist > 5) {
-        let strength = avoidForce * pow(1 - dist / avoidDist, 1.5);
-        let ang = atan2(-dy, -dx);
-        p.acc.x += cos(ang) * strength;
-        p.acc.y += sin(ang) * strength;
+        let avoidDist = halfDiag + avoidRadius;
+        if (dist < avoidDist && dist > 5) {
+          let strength = avoidForce * pow(1 - dist / avoidDist, 1.5);
+          let ang = atan2(-dy, -dx);
+          p.acc.x += cos(ang) * strength;
+          p.acc.y += sin(ang) * strength;
+        }
       }
     }
 
@@ -612,6 +617,7 @@ function euclideanDist(x1, y1, x2, y2) {
   return sqrt(dx * dx + dy * dy);
 }
 
+// ★ [CHANGED] 绘制：照片储备粒子在 PRE_GATHERING 时也显示颜色过渡
 function drawParticles() {
   noStroke();
   for (let p of pts) {
@@ -646,7 +652,6 @@ function drawParticles() {
     ellipse(p.pos.x, p.pos.y, p.size * 0.35);
   }
 }
-
 
 function easeOutQuad(t) { return t * (2 - t); }
 function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2, 3) / 2; }
@@ -727,13 +732,18 @@ class DisplayPhoto {
     return C.photoParticleTargets[idx];
   }
 
+  // ★ [CHANGED] 不再使用旧版 startGathering 从自由粒子中 claim
   startGathering() {
+    // 保留方法体但不会实际被调用
+    return false;
+  }
+
+  // ★ [NEW] 从屏幕边缘唤醒储备粒子，沿贝塞尔曲线运动
+  startPreGathering() {
     let activeCount = 0;
     for (let d of displays) {
       if (d === this) continue;
-      if (d.phase === PHASE.GATHERING || d.phase === PHASE.CONVERGING || d.phase === PHASE.DISPLAYED) {
-        activeCount++;
-      }
+      if (d.phase !== PHASE.WAITING && d.phase !== PHASE.UPLOADING && d.phase !== PHASE.PRE_GATHERING) activeCount++;
     }
     let totalActive = activeCount + 1;
 
@@ -750,67 +760,104 @@ class DisplayPhoto {
       this.h = this.w * this.aspect;
     }
 
-
     this.findNonOverlapPos();
 
-    this.assignedPts = [];
-    this.phase = PHASE.GATHERING;
+    // ★ 从照片储备粒子池（4000~14999）中唤醒
+    let needed = this.particleTarget;
+    let spawned = [];
+    for (let i = C.targetFreeCount; i < pts.length && spawned.length < needed; i++) {
+      if (pts[i].hidden && !pts[i].claimedBy && pts[i].isPhotoParticle) {
+        spawned.push(i);
+      }
+    }
+    // ★ 如果储备不够（极端情况），从自由粒子隐藏池补
+    if (spawned.length < needed) {
+      for (let i = 0; i < C.targetFreeCount && spawned.length < needed; i++) {
+        if (pts[i].hidden && !pts[i].claimedBy) {
+          spawned.push(i);
+        }
+      }
+    }
+
+    this.assignedPts = spawned;
+    this.phase = PHASE.PRE_GATHERING;
     this.stateStart = millis();
-    this.convergeProgress = 0;
+
+    // ★ 采样目标网格，设置贝塞尔曲线
+    let total = this.assignedPts.length;
+    if (total > 0) {
+      let cols_ = ceil(sqrt(total * this.aspect));
+      let rows_ = ceil(total / cols_);
+
+      for (let i = 0; i < total; i++) {
+        let idx = this.assignedPts[i];
+        let p = pts[idx];
+        let col = i % cols_;
+        let row = floor(i / cols_);
+        let nx = (col + 0.5) / cols_;
+        let ny = (row + 0.5) / rows_;
+
+        let targetX = (nx - 0.5) * this.w;
+        let targetY = (ny - 0.5) * this.h;
+
+        // ★ 屏幕边缘随机起始点
+        let edge = floor(random(4));
+        let spawnX, spawnY;
+        if (edge === 0) { spawnX = random(width); spawnY = -random(10, 60); }
+        else if (edge === 1) { spawnX = random(width); spawnY = height + random(10, 60); }
+        else if (edge === 2) { spawnX = -random(10, 60); spawnY = random(height); }
+        else { spawnX = width + random(10, 60); spawnY = random(height); }
+
+        // ★ 贝塞尔控制点（随机偏移，产生曲线感）
+        let midX = (spawnX + (this.x + targetX)) / 2 + random(-80, 80);
+        let midY = (spawnY + (this.y + targetY)) / 2 + random(-80, 80);
+
+        p.startX = spawnX;
+        p.startY = spawnY;
+        p.ctrlX = midX;
+        p.ctrlY = midY;
+        p.endX = this.x + targetX;
+        p.endY = this.y + targetY;
+        p.curveT = 0;
+        p.curveSpeed = 1.0 / C.preGatherMs;
+        p.pos.set(spawnX, spawnY);
+        p.vel = createVector(random(-0.3, 0.3), random(-0.3, 0.3));
+        p.hidden = false;
+        p.claimedBy = this.id;
+        p.photoOwnerId = this.id;
+        p.hasTarget = true;
+        p.targetX = targetX;
+        p.targetY = targetY;
+        p.targetA = 0;
+
+        // 颜色采样
+        if (this.loaded && this.img) {
+          let ix = floor(constrain(nx * this.img.width, 0, this.img.width - 1));
+          let iy = floor(constrain(ny * this.img.height, 0, this.img.height - 1));
+          let c = this.img.get(ix, iy);
+          p.targetR = red(c); p.targetG = green(c); p.targetB = blue(c);
+        } else if (this.data.redLine) {
+          let imgX = floor(nx * this.data.width);
+          let ri = this.data.redLine[imgX] || 128;
+          let bi = (this.data.blueLine && this.data.blueLine[imgX] !== -1) ? this.data.blueLine[imgX] : 128;
+          p.targetR = map(ri, 0, this.data.height, 40, 255);
+          p.targetG = 100;
+          p.targetB = map(bi, 0, this.data.height, 40, 255);
+        } else {
+          p.targetR = random(100, 255);
+          p.targetG = random(100, 255);
+          p.targetB = random(100, 255);
+        }
+      }
+    }
 
     displayCounts[this.id] = (displayCounts[this.id] || 0) + 1;
     return true;
   }
 
   claimNearbyParticles() {
-    if (this.phase !== PHASE.GATHERING && this.phase !== PHASE.CONVERGING) return;
-    if (!this.w || !this.h) return;
-    if (this.assignedPts.length >= this.particleTarget) return;
-
-    let halfW = this.w / 2;
-    let halfH = this.h / 2;
-
-    let candidates = [];
-    for (let i = 0; i < pts.length; i++) {
-      let p = pts[i];
-      if (p.claimedBy || p.hidden) continue;
-
-      let d = euclideanDist(p.pos.x, p.pos.y, this.x, this.y);
-      if (d > C.maxClaimDist) continue;
-
-      let inPhotoArea = abs(p.pos.x - this.x) < halfW && abs(p.pos.y - this.y) < halfH;
-      if (inPhotoArea) continue;
-
-      let nearPhoto = abs(p.pos.x - this.x) < halfW + C.selectionMargin &&
-                      abs(p.pos.y - this.y) < halfH + C.selectionMargin;
-      if (nearPhoto) continue;
-
-      let velMag = p.vel.mag();
-      if (velMag > 0.3) {
-        let velDir = p.vel.copy().normalize();
-        let toPhoto = createVector(this.x - p.pos.x, this.y - p.pos.y).normalize();
-        let dot = velDir.dot(toPhoto);
-        if (dot > C.dirThreshold) {
-          candidates.push({ idx: i, dist: d });
-        }
-      } else if (d < 100) {
-        candidates.push({ idx: i, dist: d });
-      }
-    }
-
-    candidates.sort((a, b) => a.dist - b.dist);
-    let need = this.particleTarget - this.assignedPts.length;
-    let take = min(need, candidates.length, 30);
-
-    for (let i = 0; i < take; i++) {
-      let idx = candidates[i].idx;
-      pts[idx].claimedBy = this.id;
-      this.assignedPts.push(idx);
-    }
-
-    if (take > 0 && this.assignedPts.length > 0) {
-      this.sampleTargets();
-    }
+    // ★ 不再使用——照片用专用储备粒子
+    return;
   }
 
   findNonOverlapPos() {
@@ -820,8 +867,8 @@ class DisplayPhoto {
       let ok = true;
       for (let d of displays) {
         if (d === this) continue;
-        if (d.phase === PHASE.UPLOADING || d.phase === PHASE.GATHERING ||
-            d.phase === PHASE.CONVERGING || d.phase === PHASE.DISPLAYED) {
+        if (d.phase === PHASE.UPLOADING || d.phase === PHASE.PRE_GATHERING ||
+            d.phase === PHASE.GATHERING || d.phase === PHASE.CONVERGING || d.phase === PHASE.DISPLAYED) {
           let gap = 20;
           if (abs(px - d.x) < (this.w + d.w) / 2 + gap &&
               abs(py - d.y) < (this.h + d.h) / 2 + gap) { ok = false; break; }
@@ -834,42 +881,7 @@ class DisplayPhoto {
   }
 
   sampleTargets() {
-    let total = this.assignedPts.length;
-    if (total === 0) return;
-
-    let cols_ = ceil(sqrt(total * this.aspect));
-    let rows_ = ceil(total / cols_);
-
-    for (let i = 0; i < total; i++) {
-      let p = pts[this.assignedPts[i]];
-      let col = i % cols_;
-      let row = floor(i / cols_);
-      let nx = (col + 0.5) / cols_;
-      let ny = (row + 0.5) / rows_;
-
-      p.targetX = (nx - 0.5) * this.w;
-      p.targetY = (ny - 0.5) * this.h;
-      p.hasTarget = true;
-      p.targetA = 0;
-
-      if (this.loaded && this.img) {
-        let ix = floor(constrain(nx * this.img.width, 0, this.img.width - 1));
-        let iy = floor(constrain(ny * this.img.height, 0, this.img.height - 1));
-        let c = this.img.get(ix, iy);
-        p.targetR = red(c); p.targetG = green(c); p.targetB = blue(c);
-      } else if (this.data.redLine) {
-        let imgX = floor(nx * this.data.width);
-        let ri = this.data.redLine[imgX] || 128;
-        let bi = (this.data.blueLine && this.data.blueLine[imgX] !== -1) ? this.data.blueLine[imgX] : 128;
-        p.targetR = map(ri, 0, this.data.height, 40, 255);
-        p.targetG = 100;
-        p.targetB = map(bi, 0, this.data.height, 40, 255);
-      } else {
-        p.targetR = random(100, 255);
-        p.targetG = random(100, 255);
-        p.targetB = random(100, 255);
-      }
-    }
+    // ★ 颜色在 startPreGathering 中已经采样，这里不再需要
   }
 
   prepareScatterPixels() {
@@ -945,25 +957,17 @@ class DisplayPhoto {
     }
   }
 
+  // ★ [CHANGED] 释放所有粒子回隐藏池（不保留为自由粒子）
   releaseParticles() {
-    let target = this.particleTarget;
-    let kept = 0;
-
     for (let idx of this.assignedPts) {
       let p = pts[idx];
       p.claimedBy = null;
+      p.photoOwnerId = null;
       p.hasTarget = false;
       p.targetA = 0;
-
-      if (kept < target && !p.hidden) {
-        p.hidden = false;
-        if (p.vel.mag() < 0.3) p.vel = tinyVel();
-        kept++;
-      } else {
-        p.hidden = true;
-      }
+      p.hidden = true;
+      p.curveT = 0;
     }
-
     this.assignedPts = [];
     if (!this.data.starred) this.data.starred = false;
     waitPool.push(this.data);
@@ -973,123 +977,85 @@ class DisplayPhoto {
     let elapsed = millis() - this.stateStart;
 
     switch (this.phase) {
+
       case PHASE.WAITING: break;
 
-      case PHASE.GATHERING: {
+      // ★ [NEW] 边缘生成→贝塞尔曲线匀速运动到目标
+      case PHASE.PRE_GATHERING: {
         for (let idx of this.assignedPts) {
           let p = pts[idx];
           if (!p.hasTarget || p.hidden) continue;
 
-          let tx = this.x + p.targetX;
-          let ty = this.y + p.targetY;
-          let dx = tx - p.pos.x;
-          let dy = ty - p.pos.y;
-          let d = sqrt(dx * dx + dy * dy);
+          p.curveT += p.curveSpeed * deltaTime;
 
-          if (d > 5) {
-            let force = min(d, 80) * C.claimedAttractForce;
-            let ang = atan2(dy, dx);
-            p.acc.x += cos(ang) * force;
-            p.acc.y += sin(ang) * force;
+          if (p.curveT >= 1) {
+            // 到点 snap
+            p.pos.set(p.endX, p.endY);
+            p.targetA = 0.7;
+          } else {
+            let t = p.curveT;
+            let omt = 1 - t;
+            // 二次贝塞尔
+            let bx = omt * omt * p.startX + 2 * omt * t * p.ctrlX + t * t * p.endX;
+            let by = omt * omt * p.startY + 2 * omt * t * p.ctrlY + t * t * p.endY;
+
+            // ★ 叠加流场微扰，保持流动感
+            let flowF = followFlow(p.pos);
+            p.pos.x = bx + flowF.x * 0.3;
+            p.pos.y = by + flowF.y * 0.3;
+
+            p.targetA = min(0.5, t * 0.6);
           }
-
-          let flowF = followFlow(p.pos);
-          p.acc.add(flowF.mult(0.3));
-          p.vel.add(p.acc);
-          if (p.vel.mag() < 0.3) p.vel.add(tinyVel());
-          p.vel.limit(C.baseSpeed * 0.8);
-          p.pos.add(p.vel);
-          p.acc.mult(0);
-          if (d < 100) p.targetA = min(0.6, p.targetA + 0.005);
         }
 
-        let minRequired = ceil(this.particleTarget * 0.7);
-        let gatherTimeRatio = elapsed / C.gatherMs;
-
-        if ((this.assignedPts.length >= minRequired) ||
-            (gatherTimeRatio >= 1 && this.assignedPts.length >= 20)) {
-          this.phase = PHASE.CONVERGING;
+        if (elapsed >= C.preGatherMs) {
+          // ★ 5秒到，snap 所有粒子到精确位置
+          for (let idx of this.assignedPts) {
+            let p = pts[idx];
+            if (!p.hasTarget) continue;
+            p.pos.set(p.endX, p.endY);
+            p.vel = tinyVel();
+            p.targetA = 0.8;
+          }
+          this.phase = PHASE.GATHERING;
           this.stateStart = millis();
-          this.convergeProgress = 0;
           ripples.push(new Ripple(this.x, this.y, 1.2));
         }
         break;
       }
 
-      case PHASE.CONVERGING: {
-        this.convergeProgress = min(1, elapsed / C.convergeMs);
+      // ★ [CHANGED] 粒子已在位，立刻切 CONVERGING
+      case PHASE.GATHERING: {
+        this.phase = PHASE.CONVERGING;
+        this.stateStart = millis();
+        this.convergeProgress = 0;
+        break;
+      }
 
-        if (frameCount % C.claimCheckInterval === 0) {
-          this.claimNearbyParticles();
-        }
+      // ★ [CHANGED] 快速过渡，snap 粒子到位、显示照片
+      case PHASE.CONVERGING: {
+        this.convergeProgress = min(1, elapsed / 1000);
 
         for (let idx of this.assignedPts) {
           let p = pts[idx];
           if (!p.hasTarget) continue;
-          if (p.hidden) continue;
-
-          let tx = this.x + p.targetX;
-          let ty = this.y + p.targetY;
-          let dx = tx - p.pos.x;
-          let dy = ty - p.pos.y;
-          let d = sqrt(dx * dx + dy * dy);
-
-          if (d < C.convergeSnapDist) {
-            p.pos.set(tx, ty);
-            p.vel = tinyVel();
-            p.targetA = 1;
-            p.hidden = true;
-            p.claimedBy = null;
-          } else {
-            let force = min(d, 250) * 0.003 * (0.5 + this.convergeProgress);
-            let ang = atan2(dy, dx);
-            p.vel.x += cos(ang) * force;
-            p.vel.y += sin(ang) * force;
-            p.vel.mult(0.94);
-            if (p.vel.mag() < 0.3) p.vel.add(tinyVel());
-            p.pos.add(p.vel);
-            if (d < 60) p.targetA = min(1, p.targetA + 0.015);
-          }
+          p.pos.set(p.endX, p.endY);
+          p.targetA = min(1, p.targetA + 0.05);
+          p.hidden = true;
+          p.claimedBy = null;
         }
 
         if (this.convergeProgress >= 1) {
-          for (let idx of this.assignedPts) {
-            let p = pts[idx];
-            if (!p.hasTarget) continue;
-            p.hidden = true;
-            p.claimedBy = null;
-          }
           this.phase = PHASE.DISPLAYED;
           this.stateStart = millis();
         }
         break;
       }
 
+      // ★ [CHANGED] 展示阶段——不再 claim 额外粒子
       case PHASE.DISPLAYED: {
-        if (frameCount % C.claimCheckInterval === 0 && this.assignedPts.length < this.particleTarget) {
-          this.claimNearbyParticles();
-        }
-
-        while (this.assignedPts.length > this.particleTarget) {
-          let idx = this.assignedPts.pop();
-          let p = pts[idx];
-          p.claimedBy = null;
-          p.hasTarget = false;
-          p.targetA = 0;
-          p.hidden = false;
-          if (p.vel.mag() < 0.3) p.vel = tinyVel();
-        }
-
-        for (let idx of this.assignedPts) {
-          let p = pts[idx];
-          if (!p.hasTarget) continue;
-          if (p.hidden) continue;
-          p.pos.set(this.x + p.targetX, this.y + p.targetY);
-          p.vel = tinyVel();
-          p.targetA = 1;
-          p.hidden = true;
-          p.claimedBy = null;  
-        }
+        // 保持所有粒子在位置（已隐藏）
+        // 不再 claimNearbyParticles
 
         let drainStartTime = C.displayMs - C.scatterLeadTime;
 
@@ -1099,7 +1065,7 @@ class DisplayPhoto {
 
         if (elapsed > C.displayMs && !isAnyPhotoScattering()) {
           drainActive = false;
-          drainEndTime = millis(); 
+          drainEndTime = millis();
           this.phase = PHASE.SCATTERING;
           this.stateStart = millis();
           this.scatterProgress = 0;
@@ -1109,6 +1075,7 @@ class DisplayPhoto {
         break;
       }
 
+      // 散开——保持不变
       case PHASE.SCATTERING: {
         this.scatterProgress = min(1, elapsed / C.scatterMs);
         let sp = this.scatterProgress;
@@ -1188,6 +1155,7 @@ class DisplayPhoto {
   }
 }
 
+// ★ [CHANGED] 统一用 startPreGathering，且一次一张
 function checkPoolDisplay() {
   if (!batchInProgress) return;  
   if (photosStartedThisBatch >= currentBatchSize) return;
@@ -1203,16 +1171,20 @@ function checkPoolDisplay() {
   if (waitPool.length === 0) return;
   if (currentBatchSize === 0) return;
 
+  // ★ 一次一张
+  for (let d of displays) {
+    if (d.phase === PHASE.PRE_GATHERING || d.phase === PHASE.GATHERING) return;
+  }
+
   let idx = pickWeightedFromPool();
   if (idx < 0) return;
   let data = waitPool[idx];
 
   let d = new DisplayPhoto(data, 'random');
   displays.push(d);
-  let started = d.startGathering();
+  let started = d.startPreGathering();
   if (started) {
     waitPool.splice(idx, 1);
-    maintainFreeCount();
     ripples.push(new Ripple(d.x, d.y, 1.0));
   } else {
     displays.pop();
@@ -1220,7 +1192,7 @@ function checkPoolDisplay() {
   }
 }
 
-// ★ 新上传照片进入等待池
+// ★ 新上传照片进入等待池（不变）
 function handleNewPhoto(data, isNew) {
   if (isNew) {
     cleanupStorage();
@@ -1304,7 +1276,6 @@ async function loadAll() {
   } catch (e) { console.error('加载失败', e); }
 }
 
-// ★ 轮询 Supabase 检查新照片
 async function checkNewPhoto() {
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/photos?order=timestamp.desc&limit=1`, {
@@ -1360,7 +1331,6 @@ function cleanup() {
   }
 }
 
-
 function keyPressed() { if (key === 'Q' || key === 'q') toggleBS(); }
 function toggleBS() { bsVisible = !bsVisible; if (bsPanel) bsVisible ? (bsPanel.style('display', 'flex'), updList()) : bsPanel.style('display', 'none'); }
 function hideBS() { bsVisible = false; if (bsPanel) bsPanel.style('display', 'none'); }
@@ -1376,7 +1346,8 @@ function buildPanel() {
   bsPanel = ov; ov.mousePressed(e => { if (e.target === ov.elt) hideBS(); });
 }
 
-const phaseNames = { 'waiting': '等待池', 'uploading': '大图展示', 'gathering': '吸引中', 'converging': '汇聚中', 'displayed': '展示', 'scattering': '散开中' };
+// ★ [CHANGED] 添加 pre_gathering 阶段名
+const phaseNames = { 'waiting': '等待池', 'pre_gathering': '预生成中', 'uploading': '大图展示', 'gathering': '吸引中', 'converging': '汇聚中', 'displayed': '展示', 'scattering': '散开中' };
 
 function updList() {
   if (!bsPanel || bsPanel.style('display') === 'none') return;
