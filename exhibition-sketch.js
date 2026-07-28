@@ -79,6 +79,7 @@ let bsVisible = false;
 let bsPanel = null;
 let displayCounts = {};
 let frameCount = 0;
+let sin1, sin2, sin3; 
 
 let currentBatchSize = 0;
 const batchSequence = [3, 1, 4, 1, 5, 2, 2, 5, 3, 5, 2, 4, 3, 1, 2, 1, 4, 2, 4, 3, 2, 5, 1, 4, 2, 2];
@@ -153,9 +154,10 @@ function draw() {
   frameCount++;
 
   let t = millis();
-  let sin1 = sin(t * 0.00005);
-  let sin2 = sin(t * 0.00004);
-  let sin3 = sin(t * 0.00006);
+  sin1 = sin(t * 0.00005);
+  sin2 = sin(t * 0.00004);
+  sin3 = sin(t * 0.00006);
+
 
   flowZ = millis() * C.flowSpeed;
   updateFlowField();
