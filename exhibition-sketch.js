@@ -24,7 +24,7 @@ const C = {
   gatherMs: 4000,
   convergeMs: 5000,
   displayMs: 16000,
-  scatterMs: 5000,
+  scatterMs: 8000,
   uploadMs: 5000,
   checkMinMs: 800,
   checkMaxMs: 1500,
@@ -144,7 +144,7 @@ function setup() {
 
   initParticles();
   buildPanel();
-  updateFlowField();  
+  updateFlowField(); 
   loadAll();
   setInterval(checkNewPhoto, 3000);
   frameRate(30);
@@ -949,20 +949,22 @@ getTargetParticleCount() {
     }
   }
 
-  releaseParticles() {
+releaseParticles() {
     let target = this.particleTarget;
-    let kept = 0;
+    let total = this.assignedPts.length;
 
-    for (let idx of this.assignedPts) {
+    let step = max(1, floor(total / target));
+
+    for (let i = 0; i < this.assignedPts.length; i++) {
+      let idx = this.assignedPts[i];
       let p = pts[idx];
       p.claimedBy = null;
       p.hasTarget = false;
       p.targetA = 0;
 
-      if (kept < target && !p.hidden) {
+      if (i % step === 0 && !p.hidden) {
         p.hidden = false;
         if (p.vel.mag() < 0.3) p.vel = tinyVel();
-        kept++;
       } else {
         p.hidden = true;
       }
@@ -971,7 +973,7 @@ getTargetParticleCount() {
     this.assignedPts = [];
     if (!this.data.starred) this.data.starred = false;
     waitPool.push(this.data);
-  }
+}
 
   update() {
     let elapsed = millis() - this.stateStart;
