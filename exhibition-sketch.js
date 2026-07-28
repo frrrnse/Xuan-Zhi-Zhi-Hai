@@ -14,7 +14,7 @@ const C = {
   totalParticles: 13500,
   targetFreeCount: 4000,
   maxDisplay: 5,
-  maxStoredPhotos: 150,
+  maxStoredPhotos: 220,
   flowSpeed: 0.00012,
   flowScale: 0.003,
   detailScale: 0.008,
@@ -1430,7 +1430,7 @@ function updList() {
       let uploadMark = d.newUpload ? '📤 ' : '';
       let showCount = displayCounts[d.id] || 0;
       idT.html(`${uploadMark}${starMark}#${String(d.id).slice(-6)} 等待中 (已展${showCount}次)`); idT.parent(info);
-      let szT = createDiv(''); szT.class('date-text'); szT.html(new Date(d.timestamp).toLocaleTimeString()); szT.parent(info);
+      let szT = createDiv(''); szT.class('date-text'); szT.html(new Date(d.timestamp).toLocaleString()); szT.parent(info);
       let acts = createDiv(''); acts.class('backstage-actions'); acts.parent(it);
       let starBtn = createDiv(d.starred ? '⭐' : '☆'); starBtn.class('backstage-star-btn'); starBtn.parent(acts);
       starBtn.mousePressed(() => toggleStar(d));
