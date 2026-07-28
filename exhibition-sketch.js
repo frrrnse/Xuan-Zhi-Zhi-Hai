@@ -11,7 +11,7 @@ const PHASE = {
 };
 
 const C = {
-  totalParticles: 15000,
+  totalParticles: 13500,
   targetFreeCount: 4000,
   maxDisplay: 5,
   maxStoredPhotos: 150,
@@ -34,7 +34,7 @@ const C = {
   maxClaimDist: 400,
   jitterStrength: 0.4,
   collisionRadius: 7,
-  collisionIterations: 2,
+  collisionIterations: 1,
   gridCellSize: 24,
   vanishBuffer: 80,
   starWeight: 1.8,
@@ -50,9 +50,9 @@ const C = {
   gatheringAvoidRadius: 20,
   claimCheckInterval: 8,
   photoParticleTargets: [2000, 1600, 1300, 1150, 1000],
-  scatterGridLarge: 9,
-  scatterGridMedium: 7,
-  scatterGridSmall: 5,
+  scatterGridLarge: 6,
+  scatterGridMedium: 5,
+  scatterGridSmall: 4,
   largePhotoThreshold: 450,
   mediumPhotoThreshold: 250,
   selectionMargin: 150,
@@ -151,6 +151,11 @@ function setup() {
 
 function draw() {
   frameCount++;
+
+  let t = millis();
+  let sin1 = sin(t * 0.00005);
+  let sin2 = sin(t * 0.00004);
+  let sin3 = sin(t * 0.00006);
 
   flowZ = millis() * C.flowSpeed;
   updateFlowField();
@@ -613,14 +618,14 @@ function drawParticles() {
     let r, g, b, a = p.alpha;
 
     let flowR = p.isRed
-      ? 235 + 20 * sin(millis() * 0.00005 + p.pos.x * 0.001)
-      : 25 + 15 * sin(millis() * 0.00004);
+      ? 235 + 20 * sin1
+      : 25 + 15 * sin2;
     let flowG = p.isRed
-      ? 50 + 20 * sin(millis() * 0.00006 + p.pos.y * 0.001)
-      : 160 + 30 * sin(millis() * 0.00005 + p.pos.x * 0.001);
+      ? 50 + 20 * sin3
+      : 160 + 30 * sin1;
     let flowB = p.isRed
-      ? 40 + 15 * sin(millis() * 0.00004)
-      : 235 + 20 * sin(millis() * 0.00006 + p.pos.y * 0.001);
+      ? 40 + 15 * sin2
+      : 235 + 20 * sin3;
 
     if (!p.claimedBy || !p.hasTarget) {
       r = flowR; g = flowG; b = flowB;
@@ -634,10 +639,12 @@ function drawParticles() {
 
     fill(r, g, b, a);
     ellipse(p.pos.x, p.pos.y, p.size, p.size);
+
     fill(255, 255, 255, a * 0.2);
     ellipse(p.pos.x, p.pos.y, p.size * 0.35);
   }
 }
+
 
 function easeOutQuad(t) { return t * (2 - t); }
 function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2, 3) / 2; }
