@@ -11,7 +11,7 @@ const PHASE = {
 };
 
 const C = {
-  totalParticles: 30000,
+  totalParticles: 15000,
   targetFreeCount: 4000,
   maxDisplay: 5,
   maxStoredPhotos: 150,
