@@ -360,7 +360,6 @@ function ensurePhotoContinuity() {
   if (!batchInProgress) return;
   if (photosStartedThisBatch >= currentBatchSize) return;
   if (waitPool.length === 0) return;
-
   for (let d of displays) {
     if (d.phase === PHASE.GATHERING || d.phase === PHASE.CONVERGING) {
       return;
@@ -384,6 +383,7 @@ function ensurePhotoContinuity() {
     displays.pop();
   }
 }
+
 
 function pickWeightedFromPool() {
   if (waitPool.length === 0) return -1;
@@ -649,8 +649,10 @@ function drawParticles() {
     fill(r, g, b, a);
     ellipse(p.pos.x, p.pos.y, p.size, p.size);
 
-    fill(255, 255, 255, a * 0.2);
-    ellipse(p.pos.x, p.pos.y, p.size * 0.35);
+    if (p.size > 1.8) {
+    fill(255, 255, 255, a * 0.15);
+    ellipse(p.pos.x, p.pos.y, p.size * 0.3, p.size * 0.3);
+}
   }
 }
 
