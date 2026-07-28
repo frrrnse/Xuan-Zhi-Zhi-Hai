@@ -144,7 +144,7 @@ function setup() {
 
   initParticles();
   buildPanel();
-
+  updateFlowField();  
   loadAll();
   setInterval(checkNewPhoto, 3000);
   frameRate(30);
