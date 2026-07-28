@@ -1298,6 +1298,9 @@ async function loadAll() {
     if (waitPool.length > 0) {
       nextPoolCheck = millis() + 500;
     }
+        if (all.length > 0) {
+      lastKnownCount = all[0].id;
+    }
   } catch (e) { console.error('加载失败', e); }
 }
 
