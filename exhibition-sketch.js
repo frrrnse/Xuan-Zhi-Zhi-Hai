@@ -22,9 +22,9 @@ const C = {
   baseSpeed: 2.0,
   trailBg: 20,
   gatherMs: 4000,
-  convergeMs: 5000,
+  convergeMs: 3500,
   displayMs: 16000,
-  scatterMs: 8000,
+  scatterMs: 6000,
   uploadMs: 5000,
   checkMinMs: 800,
   checkMaxMs: 1500,
@@ -665,11 +665,11 @@ function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2
 
 function calcPhotoSize(totalActive) {
   let baseMin, baseMax;
-  if (totalActive <= 1) { baseMin = 0.31; baseMax = 0.36; }
-  else if (totalActive === 2) { baseMin = 0.18; baseMax = 0.25; }
-  else if (totalActive === 3) { baseMin = 0.15; baseMax = 0.20; }
-  else if (totalActive === 4) { baseMin = 0.11; baseMax = 0.16; }
-  else { baseMin = 0.10; baseMax = 0.14; }
+  if (totalActive <= 1) { baseMin = 0.35; baseMax = 0.42; }
+  else if (totalActive === 2) { baseMin = 0.28; baseMax = 0.33; }
+  else if (totalActive === 3) { baseMin = 0.18; baseMax = 0.25; }
+  else if (totalActive === 4) { baseMin = 0.17; baseMax = 0.22; }
+  else { baseMin = 0.16; baseMax = 0.18; }
 
   let existingSizes = [];
   for (let d of displays) {
@@ -739,7 +739,7 @@ getTargetParticleCount() {
         activeCount++;
       }
     }
-    let totalActive = activeCount + 1;
+    let totalActive = currentBatchSize; 
 
     this.particleTarget = this.getTargetParticleCount();
 
@@ -1012,8 +1012,9 @@ releaseParticles() {
         let minRequired = ceil(this.particleTarget * 0.7);
         let gatherTimeRatio = elapsed / C.gatherMs;
 
-        if ((this.assignedPts.length >= minRequired) ||
-            (gatherTimeRatio >= 1 && this.assignedPts.length >= 20)) {
+        if (elapsed > 300 ||  
+          (this.assignedPts.length >= minRequired) ||
+          (gatherTimeRatio >= 1 && this.assignedPts.length >= 20)) {
           this.phase = PHASE.CONVERGING;
           this.stateStart = millis();
           this.convergeProgress = 0;
