@@ -41,7 +41,7 @@ const C = {
   congestionCellSize: 30,
   congestionThreshold: 15,
   congestionRemoveRatio: 0.3,
-  congestionCheckInterval: 90,
+  congestionCheckInterval: 30,
   attractRadius: 500,
   attractForce: 0.18,
   generalAvoidForce: 2.0,
