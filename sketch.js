@@ -1633,7 +1633,7 @@ function generateExhibitionThumbnail() {
       const base64Data = dataURL.split(',')[1];
       estimatedSize = base64Data.length * 0.75; // base64 → 字节
       quality -= 0.05;
-    } while (estimatedSize > 700 * 1024 && quality > 0.1);
+    } while (estimatedSize > 900 * 1024 && quality > 0.4);
 
     pg.remove();
     resolve(dataURL);
