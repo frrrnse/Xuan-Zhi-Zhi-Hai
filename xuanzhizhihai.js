@@ -1220,10 +1220,10 @@ releaseParticles() {
       push();
       textAlign(CENTER, TOP);
       textSize(14);
-      fill(255, 255, 255, alpha);
+      fill(255, 255, 255, alpha * 0.60);
       noStroke();
       textStyle(NORMAL);  
-      textFont("PingFang SC", "Microsoft YaHei", "sans-serif");
+      drawingContext.font = "300 14px 'DengXian Light', 'Microsoft YaHei Light', 'PingFang SC', 'Microsoft YaHei', sans-serif";
       text(this.nickname, this.x, this.y + this.h / 2 + 8);
       pop();
     }
