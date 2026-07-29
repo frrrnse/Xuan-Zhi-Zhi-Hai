@@ -66,6 +66,97 @@ const C = {
   drainRecoveryDelay: 2000,  
 };
 
+const DB_NAME = 'XuanZhiCache';
+const DB_VERSION = 1;
+const STORE_NAME = 'photos';
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = (e) => resolve(e.target.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+async function savePhotosToCache(photos) {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    store.clear();
+    for (let p of photos) {
+      store.put(p);
+    }
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = reject;
+    });
+    db.close();
+    console.log('✅ 已缓存', photos.length, '张照片到 IndexedDB');
+  } catch (e) {
+    console.warn('IndexedDB 写入失败（不影响功能）:', e);
+  }
+}
+
+async function loadPhotosFromCache() {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const all = await new Promise((resolve, reject) => {
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = reject;
+    });
+    db.close();
+    if (all.length > 0) {
+      console.log('✅ 从 IndexedDB 缓存加载', all.length, '张照片');
+      return all;
+    }
+    return null;
+  } catch (e) {
+    console.warn('IndexedDB 读取失败:', e);
+    return null;
+  }
+}
+
+async function addPhotoToCache(photo) {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    store.put(photo);
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = reject;
+    });
+    db.close();
+  } catch (e) {
+    console.warn('IndexedDB 追加失败:', e);
+  }
+}
+
+async function deletePhotoFromCache(id) {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(id);
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = reject;
+    });
+    db.close();
+  } catch (e) {
+    console.warn('IndexedDB 删除失败:', e);
+  }
+}
+
 let pts = [];
 let displays = [];
 let waitPool = [];
@@ -131,6 +222,33 @@ function getScatterGridSize(w, h) {
 }
 
 function setup() {
+  const hint = '抱歉，为保证展览期间的数据安全和流量充足，悬置之海暂不开放，上传功能正常使用\n\n请输入访问密码：';
+  const pwd = prompt(hint);
+  if (pwd !== 'xuanzhizhihaizhanlan2026') {
+    let overlay = createDiv('');
+    overlay.style('position', 'fixed');
+    overlay.style('top', '0');
+    overlay.style('left', '0');
+    overlay.style('width', '100%');
+    overlay.style('height', '100%');
+    overlay.style('background', '#000');
+    overlay.style('display', 'flex');
+    overlay.style('align-items', 'center');
+    overlay.style('justify-content', 'center');
+    overlay.style('z-index', '99999');
+
+    let msg = createDiv('抱歉，为保证展览期间的数据安全和流量充足，悬置之海暂不开放，上传功能正常使用');
+    msg.parent(overlay);
+    msg.style('color', '#888');
+    msg.style('font-size', '18px');
+    msg.style('text-align', 'center');
+    msg.style('padding', '40px');
+    msg.style('max-width', '500px');
+    msg.style('line-height', '1.6');
+
+    noLoop();
+    return;
+  }
   let cv = createCanvas(windowWidth, windowHeight);
   cv.parent('exhibitionCanvas');
   pixelDensity(1);
@@ -146,7 +264,7 @@ function setup() {
   buildPanel();
   updateFlowField(); 
   loadAll();
-  setInterval(checkNewPhoto, 3000);
+  setInterval(checkNewPhoto, 15000);
   frameRate(30);
 }
 
@@ -271,6 +389,7 @@ function windowResized() {
   rows = floor(height / 6);
   flowField = new Array(cols * rows);
   detailFlowField = new Array(cols * rows);
+  updateFlowField();
 }
 
 function initParticles() {
@@ -1262,16 +1381,17 @@ function checkPoolDisplay() {
   }
 }
 
-// ★ 新上传照片进入等待池
 function handleNewPhoto(data, isNew) {
   if (isNew) {
     cleanupStorage();
-    data.newUpload = millis();  
+    data.newUpload = millis();
+    addPhotoToCache(data); 
     waitPool.push(data);
   } else {
     waitPool.push(data);
   }
 }
+
 
 function cleanupStorage() {
   let allPhotos = [...waitPool];
@@ -1323,49 +1443,121 @@ class Ripple {
 
 
 async function loadAll() {
-  try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/photos?order=timestamp.desc`, {
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`
-      }
-    });
-    const all = await res.json();
-    for (let d of all) {
-      if (d.starred === undefined) d.starred = false;
+  const cached = await loadPhotosFromCache();
+  if (cached && cached.length > 0) {
+    for (let d of cached) {
+      d.starred = d.starred || false;
       d.redLine = d.red_line;
       d.blueLine = d.blue_line;
       waitPool.push(d);
     }
-    if (waitPool.length > 0) {
-      nextPoolCheck = millis() + 500;
-    }
-        if (all.length > 0) {
-      lastKnownCount = all[0].id;
-    }
-  } catch (e) { console.error('加载失败', e); }
-}
+    console.log('✅ 从缓存加载', cached.length, '张照片');
+  }
 
-async function checkNewPhoto() {
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/photos?order=timestamp.desc&limit=1`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/photos?select=id&order=timestamp.desc`, {
       headers: {
         'apikey': SUPABASE_KEY,
         'Authorization': `Bearer ${SUPABASE_KEY}`
       }
     });
-    const all = await res.json();
-    if (all.length === 0) return;
-    const newest = all[0];
-    if (newest.id !== lastKnownCount) {
-      lastKnownCount = newest.id;
-      newest.starred = false;
-      newest.redLine = newest.red_line;
-      newest.blueLine = newest.blue_line;
-      handleNewPhoto(newest, true);
+    const remoteIds = await res.json();
+    const remoteIdSet = new Set(remoteIds.map(item => item.id));
+
+    let localIdSet = new Set();
+    for (let d of waitPool) localIdSet.add(d.id);
+
+    let toDelete = [];
+    for (let d of waitPool) {
+      if (!remoteIdSet.has(d.id)) {
+        toDelete.push(d.id);
+      }
+    }
+    for (let id of toDelete) {
+      waitPool = waitPool.filter(d => d.id !== id);
+      await deletePhotoFromCache(id);
+    }
+    if (toDelete.length > 0) console.log('🗑️ 缓存清理了', toDelete.length, '张已删除的照片');
+
+    let newIds = remoteIds.filter(item => !localIdSet.has(item.id));
+    if (newIds.length > 0) {
+      console.log('📥 发现', newIds.length, '张新照片，正在下载...');
+      for (let item of newIds) {
+        const res2 = await fetch(`${SUPABASE_URL}/rest/v1/photos?id=eq.${item.id}`, {
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`
+          }
+        });
+        const data = await res2.json();
+        if (data.length > 0) {
+          let photo = data[0];
+          photo.starred = photo.starred || false;
+          photo.redLine = photo.red_line;
+          photo.blueLine = photo.blue_line;
+          waitPool.push(photo);
+          await addPhotoToCache(photo);
+        }
+      }
+    }
+
+    if (remoteIds.length > 0) lastKnownCount = remoteIds[0].id;
+
+  } catch (e) {
+    console.error('同步失败（缓存已加载，不影响使用）:', e);
+  }
+
+  if (waitPool.length > 0) {
+    nextPoolCheck = millis() + 500;
+    if (!cached || cached.length === 0) {
+      let toCache = waitPool.map(d => ({
+        id: d.id, timestamp: d.timestamp, starred: d.starred,
+        red_line: d.red_line, blue_line: d.blue_line,
+        width: d.width, height: d.height, thumbnail: d.thumbnail,
+        nickname: d.nickname
+      }));
+      await savePhotosToCache(toCache);
+    }
+  }
+}
+
+
+async function checkNewPhoto() {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/photos?select=id&order=timestamp.desc`, {
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`
+      }
+    });
+    const ids = await res.json();
+    if (ids.length === 0) return;
+
+    let localIds = new Set();
+    for (let d of displays) localIds.add(d.id);
+    for (let d of waitPool) localIds.add(d.id);
+
+    let newItems = ids.filter(item => !localIds.has(item.id));
+
+    for (let item of newItems) {
+      const res2 = await fetch(`${SUPABASE_URL}/rest/v1/photos?id=eq.${item.id}`, {
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`
+        }
+      });
+      const data = await res2.json();
+      if (data.length > 0) {
+        let photo = data[0];
+        photo.starred = photo.starred || false;
+        photo.redLine = photo.red_line;
+        photo.blueLine = photo.blue_line;
+        handleNewPhoto(photo, true);
+      }
     }
   } catch (e) { console.error(e); }
 }
+
 
 async function updDB(data) {
   try {
@@ -1465,28 +1657,27 @@ function updList() {
     let nickText = d.nickname ? `昵称:${d.nickname}` : '匿名';
     idT.html(`${starMark}#${String(d.data.id).slice(-6)} ${phaseNames[d.phase] || d.phase} (${nickText} 目标${d.particleTarget}粒/${d.assignedPts.length}实${scatterInfo})`);
     let szT = createDiv(''); szT.class('date-text'); szT.html(`${floor((millis()-d.stateStart)/1000)}s ${floor(d.w)}×${floor(d.h)}`); szT.parent(info);
-    let nickEditBtn = createDiv('✏️'); nickEditBtn.class('backstage-star-btn'); nickEditBtn.style('font-size', '12px'); nickEditBtn.parent(info);
-nickEditBtn.mousePressed(() => {
-  let newNick = prompt('修改昵称（留空=匿名）:', d.nickname || '');
-  if (newNick !== null) {
-    d.nickname = newNick.trim();
-    d.data.nickname = d.nickname;
-
-    fetch(`${SUPABASE_URL}/rest/v1/photos?id=eq.${d.data.id}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`
-      },
-      body: JSON.stringify({ nickname: d.nickname })
-    }).catch(e => console.error(e));
-    updList();
-  }
-});
     let acts = createDiv(''); acts.class('backstage-actions'); acts.parent(it);
     let starBtn = createDiv(d.data.starred ? '⭐' : '☆'); starBtn.class('backstage-star-btn'); starBtn.parent(acts);
     starBtn.mousePressed(() => toggleStar(d.data));
+    let nickEditBtn = createDiv('✏️'); nickEditBtn.class('backstage-star-btn'); nickEditBtn.style('font-size', '14px'); nickEditBtn.parent(acts);
+    nickEditBtn.mousePressed(() => {
+      let newNick = prompt('修改昵称（留空=匿名）:', d.nickname || '');
+      if (newNick !== null) {
+        d.nickname = newNick.trim();
+        d.data.nickname = d.nickname;
+        fetch(`${SUPABASE_URL}/rest/v1/photos?id=eq.${d.data.id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`
+          },
+          body: JSON.stringify({ nickname: d.nickname })
+        }).catch(e => console.error(e));
+        updList();
+      }
+    });
     let db = createDiv('✕'); db.class('backstage-delete-btn'); db.parent(acts);
     db.mousePressed(() => delPhoto(d.data.id));
   }
@@ -1520,4 +1711,6 @@ function delPhoto(id) {
   for (let i = 0; i < displays.length; i++) { if (displays[i].data.id === id) { displays[i].releaseParticles(); displays.splice(i, 1); break; } }
   for (let i = 0; i < waitPool.length; i++) { if (waitPool[i].id === id) { waitPool.splice(i, 1); break; } }
   delDB(id).then(() => { updList(); }); ripples.push(new Ripple(random(width), random(height)));
+  deletePhotoFromCache(id);  
 }
+
