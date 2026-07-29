@@ -1402,7 +1402,14 @@ function cleanup() {
 }
 
 function keyPressed() { if (key === 'Q' || key === 'q') toggleBS(); }
-function toggleBS() { bsVisible = !bsVisible; if (bsPanel) bsVisible ? (bsPanel.style('display', 'flex'), updList()) : bsPanel.style('display', 'none'); }
+function toggleBS() { 
+  if (!bsVisible) {
+    let pwd = prompt('请输入后台密码：');
+    if (pwd !== 'xzzhzl123') return;
+  }
+  bsVisible = !bsVisible; 
+  if (bsPanel) bsVisible ? (bsPanel.style('display', 'flex'), updList()) : bsPanel.style('display', 'none'); 
+}
 function hideBS() { bsVisible = false; if (bsPanel) bsPanel.style('display', 'none'); }
 
 function buildPanel() {
